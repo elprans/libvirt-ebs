@@ -438,6 +438,7 @@ class Network:
 
         new_and_current = collections.ChainMap(norm_records, current_all)
 
+        # Process all new or modified records
         for (type, name), values in norm_records.items():
             prev = current.get((type, name), set())
             if type in {"A", "AAAA"}:
@@ -458,207 +459,37 @@ class Network:
                     mod_hosts.update(self._resolve_cname(target, current_all))
 
                 if prev:
-                    deleted.append(
-                        (
-                            "txt",
-                            xmltodict.unparse(
-                                {
-                                    "txt": {
-                                        "@name": f"@@cname.{name}",
-                                        "@value": ",".join(
-                                            f'"{value}"'
-                                            for value in sorted(prev)
-                                        ),
-                                    }
-                                }
-                            ),
-                        )
-                    )
-                added.append(
-                    (
-                        "txt",
-                        xmltodict.unparse(
-                            {
-                                "txt": {
-                                    "@name": f"@@cname.{name}",
-                                    "@value": ",".join(
-                                        f'"{fqdn(value)}"'
-                                        for value in sorted(values)
-                                    ),
-                                }
-                            }
-                        ),
-                    )
-                )
+                    deleted.append(("txt", _dns_xml_cname(name, prev)))
+
+                added.append(("txt", _dns_xml_cname(name, values)))
 
             elif type == "TXT":
-                for value in prev:
-                    deleted.append(
-                        (
-                            "txt",
-                            xmltodict.unparse(
-                                {"txt": {"@name": name, "@value": value}}
-                            ),
-                        )
-                    )
-                for value in values:
-                    added.append(
-                        (
-                            "txt",
-                            xmltodict.unparse(
-                                {"txt": {"@name": name, "@value": value}}
-                            ),
-                        )
-                    )
+                deleted.extend(("txt", _dns_xml_txt(name, v)) for v in prev)
+                added.extend(("txt", _dns_xml_txt(name, v)) for v in values)
 
             elif type == "NS":
                 if prev:
-                    deleted.append(
-                        (
-                            "txt",
-                            xmltodict.unparse(
-                                {
-                                    "txt": {
-                                        "@name": f"@@ns.{name}",
-                                        "@value": ",".join(
-                                            f'"{value}"'
-                                            for value in sorted(prev)
-                                        ),
-                                    }
-                                }
-                            ),
-                        )
-                    )
-                added.append(
-                    (
-                        "txt",
-                        xmltodict.unparse(
-                            {
-                                "txt": {
-                                    "@name": f"@@ns.{name}",
-                                    "@value": ",".join(
-                                        f'"{fqdn(value)}"'
-                                        for value in sorted(values)
-                                    ),
-                                }
-                            }
-                        ),
-                    )
-                )
+                    deleted.append(("txt", _dns_xml_ns(name, prev)))
+                added.append(("txt", _dns_xml_ns(name, values)))
 
             elif type == "SRV":
-                parts = name.split(".", maxsplit=3)
-                if len(parts) == 2:
-                    service, protocol = parts
-                    domain = None
-                else:
-                    service, protocol, domain = parts
-
-                for value in prev:
-                    priority, weight, port, target = value.split(
-                        " ", maxsplit=4
-                    )
-
-                    deleted.append(
-                        (
-                            "srv",
-                            xmltodict.unparse(
-                                {
-                                    "srv": {
-                                        "@service": service,
-                                        "@protocol": protocol,
-                                        "@domain": domain,
-                                        "@priority": priority,
-                                        "@weight": weight,
-                                        "@port": port,
-                                        "@target": target,
-                                    }
-                                }
-                            ),
-                        )
-                    )
-
-                for value in values:
-                    priority, weight, port, target = value.split(
-                        " ", maxsplit=4
-                    )
-
-                    added.append(
-                        (
-                            "srv",
-                            xmltodict.unparse(
-                                {
-                                    "srv": {
-                                        "@service": service,
-                                        "@protocol": protocol,
-                                        "@domain": domain,
-                                        "@priority": priority,
-                                        "@weight": weight,
-                                        "@port": port,
-                                        "@target": target,
-                                    }
-                                }
-                            ),
-                        )
-                    )
+                deleted.extend(("srv", _dns_xml_srv(name, v)) for v in prev)
+                added.extend(("srv", _dns_xml_srv(name, v)) for v in values)
             else:
                 raise ValueError(f"unsupported resource record type: {type}")
 
-        for (type, name), values in current.items():
-            if (type, name) in norm_records:
-                continue
+        # Process all deleted records
+        deleted = frozenset(current) - frozenset(norm_records)
+        for key in deleted:
+            values = current[key]
+            type, name = key
 
             if type == "SRV":
-                for value in values:
-                    priority, weight, port, target = value.split(
-                        " ", maxsplit=4
-                    )
-
-                    deleted.append(
-                        (
-                            "srv",
-                            xmltodict.unparse(
-                                {
-                                    "srv": {
-                                        "@service": service,
-                                        "@protocol": protocol,
-                                        "@domain": domain,
-                                        "@priority": priority,
-                                        "@weight": weight,
-                                        "@port": port,
-                                        "@target": target,
-                                    }
-                                }
-                            ),
-                        )
-                    )
+                deleted.extend(("srv", _dns_xml_srv(name, v)) for v in values)
             elif type == "TXT":
-                for value in values:
-                    deleted.append(
-                        (
-                            "txt",
-                            xmltodict.unparse(
-                                {"txt": {"@name": name, "@value": value}}
-                            ),
-                        )
-                    )
+                deleted.extend(("txt", _dns_xml_txt(name, v)) for v in values)
             elif type == "NS":
-                deleted.append(
-                    (
-                        "txt",
-                        xmltodict.unparse(
-                            {
-                                "txt": {
-                                    "@name": f"@@ns.{name}",
-                                    "@value": ",".join(
-                                        f'"{value}"'
-                                        for value in sorted(values)
-                                    ),
-                                }
-                            }
-                        ),
-                    )
-                )
+                deleted.append(("txt", _dns_xml_ns(name, values)))
             elif type in {"A", "AAAA"}:
                 mod_hosts.update(values)
             elif type == "CNAME":
@@ -667,53 +498,16 @@ class Network:
                 # try to resolve the target and add it as A instead.
                 for target in values:
                     mod_hosts.update(self._resolve_cname(target, current_all))
-                deleted.append(
-                    (
-                        "txt",
-                        xmltodict.unparse(
-                            {
-                                "txt": {
-                                    "@name": f"@@cname.{name}",
-                                    "@value": ",".join(
-                                        f'"{value}"'
-                                        for value in sorted(values)
-                                    ),
-                                }
-                            }
-                        ),
-                    )
-                )
+                deleted.append(("txt", _dns_xml_cname(name, values)))
             else:
                 raise ValueError(f"unsupported resource record type: {type}")
 
+        # Apply changes to the host mappings
         for addr, hosts in add_hosts.items():
-            added.append(
-                (
-                    "host",
-                    xmltodict.unparse(
-                        {
-                            "host": {
-                                "@ip": addr,
-                                "hostname": [{"#text": h} for h in hosts],
-                            }
-                        }
-                    ),
-                )
-            )
+            added.append(("host", _dns_xml_host(addr, hosts)))
 
         for addr in mod_hosts:
-            deleted.append(
-                (
-                    "host",
-                    xmltodict.unparse(
-                        {
-                            "host": {
-                                "@ip": addr,
-                            }
-                        }
-                    ),
-                )
-            )
+            deleted.append(("host", _dns_xml_host(addr, [])))
 
         return added, deleted
 
@@ -762,3 +556,65 @@ def fqdn(hostname: str) -> str:
 def in_zone(hostname: str, zone: str) -> bool:
     hostname = fqdn(hostname)
     return hostname == zone or hostname.endswith(f".{zone}")
+
+
+def _dns_xml_host(addr: str, hosts: list[str]) -> str:
+    if hosts:
+        return xmltodict.unparse(
+            {
+                "host": {
+                    "@ip": addr,
+                    "hostname": [{"#text": h} for h in hosts],
+                }
+            }
+        )
+    else:
+        return xmltodict.unparse(
+            {
+                "host": {
+                    "@ip": addr,
+                }
+            }
+        )
+
+
+def _dns_xml_txt(name: str, value: str) -> str:
+    return xmltodict.unparse({"txt": {"@name": name, "@value": value}})
+
+
+def _dns_xml_cname(name: str, values: list[str]) -> str:
+    return _dns_xml_txt(
+        f"@@cname.{name}",
+        ",".join(f'"{fqdn(value)}"' for value in sorted(values)),
+    )
+
+
+def _dns_xml_ns(name: str, values: list[str]) -> str:
+    return _dns_xml_txt(
+        f"@@ns.{name}",
+        ",".join(f'"{fqdn(value)}"' for value in sorted(values)),
+    )
+
+
+def _dns_xml_srv(name: str, value: str) -> str:
+    parts = name.split(".", maxsplit=3)
+    if len(parts) == 2:
+        service, protocol = parts
+        domain = None
+    else:
+        service, protocol, domain = parts
+    priority, weight, port, target = value.split(" ", maxsplit=4)
+
+    return xmltodict.unparse(
+        {
+            "srv": {
+                "@service": service,
+                "@protocol": protocol,
+                "@domain": domain,
+                "@priority": priority,
+                "@weight": weight,
+                "@port": port,
+                "@target": target,
+            }
+        }
+    )
