@@ -14,14 +14,12 @@ from typing import (
 import collections
 import functools
 import ipaddress
-import types
 
 import libvirt
 import xmltodict
 
 
 def get_volume(pool: libvirt.virStoragePool, name: str) -> Volume:
-
     for virvol in pool.listAllVolumes():
         vol = volume_from_xml(virvol.XMLDesc(0))
         if vol.name == name:
@@ -45,7 +43,6 @@ def get_all_volumes(
 def get_all_domains(
     conn: libvirt.virConnect,
 ) -> List[Domain]:
-
     domains = []
 
     for virdom in conn.listAllDomains():
@@ -59,7 +56,6 @@ def get_vol_attachments(
     pool: libvirt.virStoragePool,
     volume: Volume,
 ) -> List[VolumeAttachment]:
-
     conn = pool.connect()
     attachments = []
 

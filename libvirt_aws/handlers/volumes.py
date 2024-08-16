@@ -18,12 +18,10 @@ from .. import objects
 
 
 class InvalidAttachmentNotFound(_routing.ClientError):
-
     code = "InvalidAttachment.NotFound"
 
 
 class InvalidVolumeNotFound(_routing.ClientError):
-
     code = "InvalidVolume.NotFound"
 
 
@@ -379,7 +377,8 @@ async def modify_volume(
             size_gb = int(size)
         except ValueError:
             raise _routing.InvalidParameterError(
-                "invalid Size value") from None
+                "invalid Size value"
+            ) from None
 
         vol_info = _describe_volume(pool, vol)
 
@@ -393,14 +392,15 @@ async def modify_volume(
                     try:
                         domain.blockResize(
                             os.path.basename(att["device"]),
-                            size_gb * 2 ** 30,
+                            size_gb * 2**30,
                             libvirt.VIR_DOMAIN_BLOCK_RESIZE_BYTES,
                         )
                     except libvirt.libvirtError as e:
                         result["modificationState"] = "failed"
                         result["statusMessage"] = str(e)
                         app["logger"].exception(
-                            "could not resize attached volume")
+                            "could not resize attached volume"
+                        )
 
         else:
             try:
@@ -408,12 +408,11 @@ async def modify_volume(
             except libvirt.libvirtError as e:
                 raise InvalidVolumeNotFound(f"invalid VolumeId: {e}") from e
             try:
-                virvol.resize(size_gb * 2 ** 30)
+                virvol.resize(size_gb * 2**30)
             except libvirt.libvirtError as e:
                 result["modificationState"] = "failed"
                 result["statusMessage"] = str(e)
-                app["logger"].exception(
-                    "could not resize detached volume")
+                app["logger"].exception("could not resize detached volume")
 
     end_time = datetime.datetime.now(datetime.timezone.utc)
     result["endTime"] = end_time.strftime("%Y-%m-%dT%H:%M:%S.%f000Z")
@@ -510,7 +509,6 @@ def _describe_volume(
     pool: libvirt.virStoragePool,
     volume: objects.Volume,
 ) -> Dict[str, Any]:
-
     attachments = objects.get_vol_attachments(pool, volume)
     existing = {(att.volume, att.domain) for att in attachments}
 

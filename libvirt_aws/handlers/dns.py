@@ -39,32 +39,26 @@ def format_route53_error_xml(err: _routing.ServiceError) -> str:
 
 
 class NoSuchHostedZoneError(_routing.NotFoundError):
-
     code = "NoSuchHostedZone"
 
 
 class InvalidInputError(_routing.ClientError):
-
     code = "InvalidInput"
 
 
 class InvalidDomainNameError(_routing.ClientError):
-
     code = "InvalidDomainName"
 
 
 class HostedZoneNotEmptyError(_routing.ClientError):
-
     code = "HostedZoneNotEmpty"
 
 
 class InvalidChangeBatchError(_routing.ClientError):
-
     code = "InvalidChangeBatch"
 
 
 class NoSuchChangeError(_routing.NotFoundError):
-
     code = "NoSuchChange"
 
 
@@ -379,7 +373,9 @@ async def list_hosted_zones_by_name(
         try:
             max_items = int(max_items_str)
         except ValueError:
-            raise _routing.InvalidParameterError("maxitems must be an integer")
+            raise _routing.InvalidParameterError(
+                "maxitems must be an integer"
+            ) from None
 
         if max_items > 100:
             raise _routing.InvalidParameterError(
@@ -703,7 +699,7 @@ async def list_resource_record_sets(
         try:
             limit = int(limit)
         except (TypeError, ValueError):
-            raise InvalidInputError("invalid MaxItems value")
+            raise InvalidInputError("invalid MaxItems value") from None
 
     return {
         "ResourceRecordSets": [
