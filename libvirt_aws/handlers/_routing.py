@@ -67,7 +67,6 @@ def format_xml_response(
 
 
 class ServiceError(web.HTTPError):
-
     code: str
 
     def __init__(
@@ -109,22 +108,18 @@ class NotFoundError(ServiceError, web.HTTPNotFound):
 
 
 class InvalidActionError(ClientError):
-
     code = "InvalidAction"
 
 
 class InvalidMethodError(ServiceError, web.HTTPMethodNotAllowed):
-
     code = "InvalidAction"
 
 
 class InvalidParameterError(ClientError):
-
     code = "InvalidParameterValue"
 
 
 class IncorrectStateError(ClientError):
-
     code = "IncorrectState"
 
 
@@ -133,7 +128,6 @@ class ServerError(ServiceError, web.HTTPInternalServerError):
 
 
 class InternalServerError(ServerError):
-
     code = "InternalError"
 
 
@@ -212,7 +206,6 @@ def direct_handler(
     list_format: Literal["condensed", "expanded"] = "expanded",
     error_formatter: Callable[[ServiceError], str] = format_ec2_error_xml,
 ) -> Callable[[_HandlerType], _HandlerType]:
-
     if isinstance(methods, str):
         methods = (methods,)
 

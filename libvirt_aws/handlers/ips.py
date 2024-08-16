@@ -28,27 +28,22 @@ PUBLIC_IP_BLOCK_SIZE = 16
 
 
 class AddressLimitExceededError(_routing.ClientError):
-
     code = "AddressLimitExceeded"
 
 
 class InvalidAddressID_NotFound(_routing.ClientError):
-
     code = "InvalidAddressID.NotFound"
 
 
 class InvalidAddress_NotFound(_routing.ClientError):
-
     code = "InvalidAddress.NotFound"
 
 
 class InvalidAddress_InUse(_routing.ClientError):
-
     code = "InvalidIPAddress.InUse"
 
 
 class InvalidAssociationID_NotFound(_routing.ClientError):
-
     code = "InvalidAssociationID.NotFound"
 
 
@@ -623,7 +618,7 @@ async def assign_private_ip_addresses(
     except ValueError:
         raise _routing.InvalidParameterError(
             "SecondaryPrivateIpAddressCount must be a positive integer"
-        )
+        ) from None
 
     if addr_count <= 0:
         raise _routing.InvalidParameterError(
@@ -841,7 +836,7 @@ async def describe_network_ifaces(
             raise _routing.InternalServerError(
                 f"could not decode output of `ip addr list` in VM: \n"
                 f"{e}\nOUTPUT:\n{output_str}"
-            )
+            ) from e
 
         for iface in ip_output:
             if iface.get("link_type") != "ether":

@@ -40,3 +40,11 @@ strict = true
 
 [tool.versioningit.write]
 file = "libvirt_aws/_version.py"
+
+[tool.ruff]
+lint.select = ["E", "F", "W", "B"]
+lint.ignore = [
+    "F541", # f-string without any placeholders
+]
+line-length = 79
+indent-width = 4
