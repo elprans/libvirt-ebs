@@ -122,14 +122,7 @@ def init_app(
     database: str,
     region: str,
 ) -> web.Application:
-    app = web.Application(
-        middlewares=[
-            web.normalize_path_middleware(
-                append_slash=False,
-                remove_slash=True,
-            )
-        ]
-    )
+    app = web.Application()
     # logging.basicConfig(level=logging.DEBUG)
     aiohttp.log.access_logger.setLevel(logging.DEBUG)
     app["libvirt"] = libvirt.open(libvirt_uri)
