@@ -221,16 +221,25 @@ def direct_handler(
                     error_formatter=error_formatter,
                     include_request_id=False,
                 )
-                if (method, path) not in _path_handlers:
-                    routes.route(method, path)(
-                        functools.partial(
-                            handle_request,
-                            action=action,
+                paths = [path]
+                if path != "/":
+                    if path.endswith("/"):
+                        paths.append(path.rstrip("/"))
+                    else:
+                        paths.append(f"{path}/")
+                for p in paths:
+                    if (method, p) not in _path_handlers:
+                        routes.route(method, p)(
+                            functools.partial(
+                                handle_request,
+                                action=action,
+                            )
                         )
-                    )
-                    _path_handlers.add((method, path))
-                else:
-                    raise AssertionError(f"{method} {path} is already handled")
+                        _path_handlers.add((method, p))
+                    else:
+                        raise AssertionError(
+                            f"{method} {p} is already handled"
+                        )
             else:
                 raise AssertionError(f"{method} {action} is already handled")
         return handler

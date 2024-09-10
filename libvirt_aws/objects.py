@@ -390,7 +390,7 @@ class Network:
                 if "srv" not in dns:
                     dns["srv"] = []
                 for value in values:
-                    prio, weight, port, target = value.split(" ", 4)
+                    prio, weight, port, target = value.split(" ", 3)
                     dns["srv"].append(
                         {
                             "@name": name,
@@ -425,7 +425,14 @@ class Network:
         current = self.get_dns_records()
         current_all = self.get_dns_records(include_eager_cname=True)
 
-        add_hosts: Dict[str, List[str]] = collections.defaultdict(list)
+        host_map: Dict[str, Set[str]] = collections.defaultdict(set)
+        for (type, name), values in current_all.items():
+            if type in {"A", "AAAA"}:
+                for addr in values:
+                    host_map[addr].add(name)
+
+        current_hosts = set(host_map)
+
         mod_hosts: Set[str] = set()
 
         added: List[Tuple[str, str]] = []
@@ -441,22 +448,42 @@ class Network:
         # Process all new or modified records
         for (type, name), values in norm_records.items():
             prev = current.get((type, name), set())
+            if prev == values:
+                # No changes
+                continue
+
             if type in {"A", "AAAA"}:
-                for value in values:
-                    add_hosts[value].append(name)
-                mod_hosts.update(prev)
+                added_addrs = values - prev
+                for added_addr in added_addrs:
+                    host_map[added_addr].add(name)
+                mod_hosts.update(added_addrs)
+
+                deleted_addrs = prev - values
+                for deleted_addr in deleted_addrs:
+                    host_map[deleted_addr].discard(name)
+                mod_hosts.update(deleted_addrs)
 
             elif type == "CNAME":
                 # Unfortunately, libvirt does not support adding
                 # CNAME records, so we have to do the next best thing:
                 # try to resolve the target and add it as A instead.
-                for target in values:
-                    addrs = self._resolve_cname(target, new_and_current)
-                    for address in addrs:
-                        add_hosts[address].append(name)
+                added_addrs = set()
+                for added_target in values - prev:
+                    added_addrs.update(
+                        self._resolve_cname(added_target, new_and_current)
+                    )
+                for added_addr in added_addrs:
+                    host_map[added_addr].add(name)
+                mod_hosts.update(added_addrs)
 
-                for target in prev:
-                    mod_hosts.update(self._resolve_cname(target, current_all))
+                deleted_addrs = set()
+                for deleted_target in prev - values:
+                    deleted_addrs.update(
+                        self._resolve_cname(deleted_target, current_all)
+                    )
+                for deleted_addr in deleted_addrs:
+                    host_map[deleted_addr].discard(name)
+                mod_hosts.update(deleted_addrs)
 
                 if prev:
                     deleted.append(("txt", _dns_xml_cname(name, prev)))
@@ -464,8 +491,12 @@ class Network:
                 added.append(("txt", _dns_xml_cname(name, values)))
 
             elif type == "TXT":
-                deleted.extend(("txt", _dns_xml_txt(name, v)) for v in prev)
-                added.extend(("txt", _dns_xml_txt(name, v)) for v in values)
+                deleted.extend(
+                    ("txt", _dns_xml_txt(name, v)) for v in prev - values
+                )
+                added.extend(
+                    ("txt", _dns_xml_txt(name, v)) for v in values - prev
+                )
 
             elif type == "NS":
                 if prev:
@@ -473,14 +504,17 @@ class Network:
                 added.append(("txt", _dns_xml_ns(name, values)))
 
             elif type == "SRV":
-                deleted.extend(("srv", _dns_xml_srv(name, v)) for v in prev)
-                added.extend(("srv", _dns_xml_srv(name, v)) for v in values)
+                deleted.extend(
+                    ("srv", _dns_xml_srv(name, v)) for v in prev - values
+                )
+                added.extend(
+                    ("srv", _dns_xml_srv(name, v)) for v in values - prev
+                )
             else:
                 raise ValueError(f"unsupported resource record type: {type}")
 
         # Process all deleted records
-        deleted = frozenset(current) - frozenset(norm_records)
-        for key in deleted:
+        for key in frozenset(current) - frozenset(norm_records):
             values = current[key]
             type, name = key
 
@@ -492,22 +526,35 @@ class Network:
                 deleted.append(("txt", _dns_xml_ns(name, values)))
             elif type in {"A", "AAAA"}:
                 mod_hosts.update(values)
+                for addr in values:
+                    host_map[addr].discard(name)
             elif type == "CNAME":
                 # Unfortunately, libvirt does not support adding
                 # CNAME records, so we have to do the next best thing:
                 # try to resolve the target and add it as A instead.
+                deleted_addrs = set()
                 for target in values:
-                    mod_hosts.update(self._resolve_cname(target, current_all))
+                    deleted_addrs.update(
+                        self._resolve_cname(target, current_all)
+                    )
+                for deleted_addr in deleted_addrs:
+                    host_map[deleted_addr].discard(name)
+                mod_hosts.update(deleted_addrs)
+
                 deleted.append(("txt", _dns_xml_cname(name, values)))
             else:
                 raise ValueError(f"unsupported resource record type: {type}")
 
         # Apply changes to the host mappings
-        for addr, hosts in add_hosts.items():
-            added.append(("host", _dns_xml_host(addr, hosts)))
+        deleted.extend(
+            ("host", _dns_xml_host(addr, []))
+            for addr in mod_hosts & current_hosts
+        )
 
         for addr in mod_hosts:
-            deleted.append(("host", _dns_xml_host(addr, [])))
+            hosts = host_map.get(addr)
+            if hosts:
+                added.append(("host", _dns_xml_host(addr, hosts)))
 
         return added, deleted
 
@@ -558,9 +605,9 @@ def in_zone(hostname: str, zone: str) -> bool:
     return hostname == zone or hostname.endswith(f".{zone}")
 
 
-def _dns_xml_host(addr: str, hosts: list[str]) -> str:
+def _dns_xml_host(addr: str, hosts: list[str] |  set[str]) -> str:
     if hosts:
-        return xmltodict.unparse(
+        return xmltodict.unparse(  # type: ignore
             {
                 "host": {
                     "@ip": addr,
@@ -569,7 +616,7 @@ def _dns_xml_host(addr: str, hosts: list[str]) -> str:
             }
         )
     else:
-        return xmltodict.unparse(
+        return xmltodict.unparse(  # type: ignore
             {
                 "host": {
                     "@ip": addr,
@@ -579,17 +626,19 @@ def _dns_xml_host(addr: str, hosts: list[str]) -> str:
 
 
 def _dns_xml_txt(name: str, value: str) -> str:
-    return xmltodict.unparse({"txt": {"@name": name, "@value": value}})
+    return xmltodict.unparse(  # type: ignore
+        {"txt": {"@name": name, "@value": value}},
+    )
 
 
-def _dns_xml_cname(name: str, values: list[str]) -> str:
+def _dns_xml_cname(name: str, values: list[str] | set[str]) -> str:
     return _dns_xml_txt(
         f"@@cname.{name}",
         ",".join(f'"{fqdn(value)}"' for value in sorted(values)),
     )
 
 
-def _dns_xml_ns(name: str, values: list[str]) -> str:
+def _dns_xml_ns(name: str, values: list[str] | set[str]) -> str:
     return _dns_xml_txt(
         f"@@ns.{name}",
         ",".join(f'"{fqdn(value)}"' for value in sorted(values)),
@@ -597,15 +646,18 @@ def _dns_xml_ns(name: str, values: list[str]) -> str:
 
 
 def _dns_xml_srv(name: str, value: str) -> str:
-    parts = name.split(".", maxsplit=3)
+    parts = name.split(".", maxsplit=2)
     if len(parts) == 2:
         service, protocol = parts
         domain = None
     else:
         service, protocol, domain = parts
-    priority, weight, port, target = value.split(" ", maxsplit=4)
+    priority, weight, port, target = value.split(" ", maxsplit=3)
 
-    return xmltodict.unparse(
+    service = service.lstrip("_")
+    protocol = protocol.lstrip("_")
+
+    return xmltodict.unparse(  # type: ignore
         {
             "srv": {
                 "@service": service,
